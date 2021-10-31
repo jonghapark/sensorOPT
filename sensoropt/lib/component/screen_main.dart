@@ -174,8 +174,7 @@ class ScanscreenState extends State<Scanscreen> {
                   MaterialPageRoute(
                       builder: (context) => DetailScreen(
                           currentDevice: deviceList[index],
-                          minmaxStamp: minmaxStamp))).then((value) =>
-                  value == null ? Navigator.pop(context) : print(''));
+                          minmaxStamp: minmaxStamp)));
               // await _stopMonitoringTemperature();
             } else {
               Navigator.push(
@@ -1883,7 +1882,7 @@ showMyDialog_Disconnect(BuildContext context) {
       return Dialog(
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
-        backgroundColor: Color.fromRGBO(0x61, 0xB2, 0xD0, 1),
+        backgroundColor: Color.fromRGBO(100, 137, 254, 1),
         elevation: 16.0,
         child: Container(
             width: MediaQuery.of(context).size.width / 3,
@@ -2101,7 +2100,7 @@ showMyDialog_Connecting(BuildContext context) {
       return Dialog(
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
-        backgroundColor: Color.fromRGBO(0x61, 0xB2, 0xD0, 1),
+        backgroundColor: Color.fromRGBO(100, 137, 254, 1),
         elevation: 16.0,
         child: Container(
             width: MediaQuery.of(context).size.width / 3,

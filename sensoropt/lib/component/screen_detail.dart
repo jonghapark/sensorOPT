@@ -23,6 +23,9 @@ import 'dart:io';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:screenshot/screenshot.dart';
 import 'package:esys_flutter_share/esys_flutter_share.dart';
+import 'package:date_time_picker/date_time_picker.dart';
+import 'package:csv/csv.dart';
+import 'package:excel/excel.dart' as ex;
 
 class DetailScreen extends StatefulWidget {
   final BleDeviceItem currentDevice;
@@ -51,6 +54,8 @@ class _DetailScreenState extends State<DetailScreen> {
   int _minTemp = 4;
   int _maxTemp = 28;
   bool isSwitchedHumi = true;
+  DateTime startDateTime = DateTime.now().subtract(Duration(hours: 1));
+  DateTime endDateTime = DateTime.now();
   // String result = '';
 
   String log = '데이터 가져오는 중';
@@ -82,6 +87,22 @@ class _DetailScreenState extends State<DetailScreen> {
     }).catchError((onError) {
       print(onError);
     });
+  }
+
+  refreshFilteredData() {
+    List<LogData> temp = [];
+    print(filteredDatas.length.toString());
+    for (int i = 0; i < fetchDatas.length; i++) {
+      if (fetchDatas[i].timestamp.isBefore(endDateTime) &&
+          fetchDatas[i].timestamp.isAfter(startDateTime)) {
+        temp.add(fetchDatas[i]);
+      }
+    }
+    setState(() {
+      filteredDatas = temp;
+    });
+    // print(filteredDatas[0].timestamp.toString());
+    // print(filteredDatas[1].timestamp.toString());
   }
 
   String innerCondition(int min, int max, double temp) {
@@ -159,6 +180,73 @@ class _DetailScreenState extends State<DetailScreen> {
     return result;
   }
 
+  exportCSV() async {
+    Map<Permission, PermissionStatus> statuses = await [
+      Permission.storage,
+    ].request();
+
+    List<List<dynamic>> rows = [];
+
+    List<dynamic> row = [];
+    row.add("NO.");
+    row.add("Temp");
+    row.add("DateTime");
+    rows.add(row);
+    for (int i = 0; i < filteredDatas.length; i++) {
+      List<dynamic> row = [];
+      row.add((i + 1).toString());
+      row.add(filteredDatas[i].temperature.toString());
+      row.add(filteredDatas[i].timestamp.toLocal().toString());
+      rows.add(row);
+    }
+
+    String csv = const ListToCsvConverter().convert(rows);
+
+    final dir = await getExternalStorageDirectory();
+
+    // print("dir $dir");
+    String filepath = dir.path;
+    String now = DateTime.now().toString();
+    File f = File(filepath + "/result_" + now + ".csv");
+    f.writeAsString(csv);
+
+    await Share.file(
+            '결과', '/report_' + now + '.csv', await f.readAsBytes(), 'text/csv',
+            text: 'SensorOPT 결과 파일입니다.')
+        .then((value) => print('csv 공유완료'))
+        .onError((error, stackTrace) => print(error));
+  }
+
+  void exportxlsx() async {
+    var excel = ex.Excel.createExcel();
+    ex.Sheet sheetObejct = excel['Result'];
+    excel.delete('Sheet1');
+    sheetObejct.appendRow(['No.', 'Temp', 'DateTime']);
+    for (int i = 0; i < filteredDatas.length; i++) {
+      sheetObejct.appendRow([
+        (i + 1).toString(),
+        filteredDatas[i].temperature.toString(),
+        filteredDatas[i].timestamp.toLocal().toString()
+      ]);
+    }
+    var fileBytes = excel.save();
+    var directory = await getApplicationDocumentsDirectory();
+
+    final dir = await getExternalStorageDirectory();
+
+    // print("dir $dir");
+    String filepath = dir.path;
+    String now = DateFormat('yyyy-MM-dd').format(DateTime.now().toLocal());
+    File f = File(filepath + "/result_" + now + ".xlsx");
+    f.writeAsBytesSync(fileBytes);
+
+    await Share.file('결과', 'report_' + now + '.xlsx', await f.readAsBytes(),
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            text: 'SensorOPT 결과 파일입니다.')
+        .then((value) => print('xlsx 공유완료'))
+        .onError((error, stackTrace) => print(error));
+  }
+
   void uploadPDF() async {
     // storage permission ask
     var status = await Permission.storage.status;
@@ -181,29 +269,15 @@ class _DetailScreenState extends State<DetailScreen> {
         },
       ),
     );
-    List<List<pw.Text>> temp = allText();
-    for (int i = 0; i < temp.length; i++) {
-      await pdf.addPage(pw.Page(
-        pageFormat: PdfPageFormat.a4,
-        build: (pw.Context context) {
-          return pw.Center(
-              // 100개 정도의 데이터
-              child: pw.Column(
-            mainAxisAlignment: pw.MainAxisAlignment.start,
-            children: [pw.Text('Log Datas\n\n')] + temp[i],
-          )); //getting error here
-        },
-      ));
-    }
 
     String now = DateTime.now().toString();
     File pdfFile = File(filePath + '/report_' + now + '.pdf');
     pdfFile.writeAsBytesSync(await pdf.save());
     print('pdf 저장완료');
 
-    await Share.file('의약품 운송 결과', '/report_' + now + '.pdf',
+    await Share.file('결과', '/report_' + now + '.pdf',
             await pdfFile.readAsBytes(), 'application/pdf',
-            text: '결과 보고서 파일입니다.')
+            text: 'SensorOPT 결과 파일입니다.')
         .then((value) => print('pdf 공유완료'))
         .onError((error, stackTrace) => print(error));
   }
@@ -290,32 +364,8 @@ class _DetailScreenState extends State<DetailScreen> {
         },
       ),
     );
-    List<List<pw.TableRow>> temp = allRow();
 
-    for (int i = 0; i < temp.length; i++) {
-      await pdf.addPage(pw.Page(
-          orientation: pw.PageOrientation.natural,
-          build: (context) => pw.Column(
-                mainAxisAlignment: pw.MainAxisAlignment.start,
-                crossAxisAlignment: pw.CrossAxisAlignment.center,
-                children: [
-                  pw.Text(
-                    'Log Datas',
-                    style: pw.TextStyle(fontSize: 20, color: PdfColors.grey),
-                  ),
-                  pw.Container(
-                    margin: pw.EdgeInsets.only(top: 8),
-                    color: PdfColors.white,
-                    child: pw.Table(
-                      border: pw.TableBorder.all(color: PdfColors.black),
-                      children: temp[i],
-                    ),
-                  )
-                ],
-              )));
-    }
-
-    String now = DateTime.now().toString();
+    String now = DateTime.now().toLocal().toString();
     File pdfFile = File(filePath + '/report_' + now + '.pdf');
     pdfFile.writeAsBytesSync(await pdf.save());
     print('pdf 저장완료');
@@ -435,7 +485,7 @@ class _DetailScreenState extends State<DetailScreen> {
   dataFiltering(int index) {
     List<LogData> tmp = [];
     if (index == 0) {
-      DateTime oneHourAgo = DateTime.now().subtract(Duration(hours: 1));
+      DateTime oneHourAgo = DateTime.now().subtract(Duration(hours: 3));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
         if (fetchDatas[i].timestamp.isAfter(oneHourAgo))
           tmp.add(fetchDatas[i]);
@@ -449,9 +499,11 @@ class _DetailScreenState extends State<DetailScreen> {
     } else if (index == 1) {
       DateTime oneDayAgo = DateTime.now().subtract(Duration(days: 1, hours: 1));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
-        if (fetchDatas[i].timestamp.isAfter(oneDayAgo))
-          tmp.add(fetchDatas[i]);
-        else
+        if (fetchDatas[i].timestamp.isAfter(oneDayAgo)) {
+          if (i % 2 == 0) {
+            tmp.add(fetchDatas[i]);
+          }
+        } else
           break;
       }
       print(tmp.length);
@@ -461,9 +513,11 @@ class _DetailScreenState extends State<DetailScreen> {
     } else if (index == 2) {
       DateTime oneWeekAgo = DateTime.now().subtract(Duration(days: 8));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
-        if (fetchDatas[i].timestamp.isAfter(oneWeekAgo))
-          tmp.add(fetchDatas[i]);
-        else
+        if (fetchDatas[i].timestamp.isAfter(oneWeekAgo)) {
+          if (i % 15 == 0) {
+            tmp.add(fetchDatas[i]);
+          }
+        } else
           break;
       }
       setState(() {
@@ -472,9 +526,11 @@ class _DetailScreenState extends State<DetailScreen> {
     } else if (index == 3) {
       DateTime oneMonthAgo = DateTime.now().subtract(Duration(days: 31));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
-        if (fetchDatas[i].timestamp.isAfter(oneMonthAgo))
-          tmp.add(fetchDatas[i]);
-        else
+        if (fetchDatas[i].timestamp.isAfter(oneMonthAgo)) {
+          if (i % 50 == 0) {
+            tmp.add(fetchDatas[i]);
+          }
+        } else
           break;
       }
       setState(() {
@@ -483,9 +539,11 @@ class _DetailScreenState extends State<DetailScreen> {
     } else {
       DateTime oneYearAgo = DateTime.now().subtract(Duration(days: 364));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
-        if (fetchDatas[i].timestamp.isAfter(oneYearAgo))
-          tmp.add(fetchDatas[i]);
-        else
+        if (fetchDatas[i].timestamp.isAfter(oneYearAgo)) {
+          if (i % 50 == 0) {
+            tmp.add(fetchDatas[i]);
+          }
+        } else
           break;
       }
       setState(() {
@@ -532,9 +590,9 @@ class _DetailScreenState extends State<DetailScreen> {
   }
 
   fetchLogData() async {
-    DeviceInfo temp =
-        await DBHelper().getDevice(widget.currentDevice.getserialNumber());
-    isSwitchedHumi = temp.isDesiredConditionOn == 'true' ? true : false;
+    // DeviceInfo temp =
+    //     await DBHelper().getDevice(widget.currentDevice.getserialNumber());
+    // isSwitchedHumi = temp.isDesiredConditionOn == 'true' ? true : false;
 
     await monitorCharacteristic(widget.currentDevice.peripheral);
     print('Write Start');
@@ -586,9 +644,9 @@ class _DetailScreenState extends State<DetailScreen> {
         else if (notifyResult[10] == 0x06) {
           print('총 몇개? ' + fetchDatas.length.toString());
           print('Read End !');
-
+          dataFiltering(1);
           setState(() {
-            filteredDatas = fetchDatas;
+            // filteredDatas = fetchDatas;
             dataFetchEnd = true;
           });
         }
@@ -687,36 +745,37 @@ class _DetailScreenState extends State<DetailScreen> {
                         child: Row(
                             mainAxisAlignment: MainAxisAlignment.end,
                             children: [
-                              new IconButton(
-                                icon: new Icon(Icons.share, size: 30),
-                                onPressed: () async {
-                                  scaffoldKey.currentState
-                                      .showSnackBar(SnackBar(
-                                    duration: Duration(seconds: 2),
-                                    content: Text('운송 결과 PDF를 생성중입니다.',
-                                        style: TextStyle(fontSize: 18)),
-                                  ));
+                              SizedBox()
+                              // new IconButton(
+                              //   icon: new Icon(Icons.share, size: 30),
+                              //   onPressed: () async {
+                              //     scaffoldKey.currentState
+                              //         .showSnackBar(SnackBar(
+                              //       duration: Duration(seconds: 2),
+                              //       content: Text('운송 결과 PDF를 생성중입니다.',
+                              //           style: TextStyle(fontSize: 18)),
+                              //     ));
 
-                                  await takeScreenshot();
-                                  // showUploadDialog(
-                                  //     context, filteredDatas.length);
-                                  // sendFetchData();
+                              //     await takeScreenshot();
+                              //     // showUploadDialog(
+                              //     //     context, filteredDatas.length);
+                              //     // sendFetchData();
 
-                                  await uploadPDF2();
-                                  // final pdf = pw.Document();
+                              //     await uploadPDF2();
+                              //     // final pdf = pw.Document();
 
-                                  // pdf.addPage(
-                                  //   pw.Page(
-                                  //     build: (pw.Context context) =>
-                                  //         pw.Container(
-                                  //       child: pw.Text('Hello World!'),
-                                  //     ),
-                                  //   ),
-                                  // );
-                                  // final file = File('example.pdf');
-                                  // await file.writeAsBytes(await pdf.save());
-                                },
-                              )
+                              //     // pdf.addPage(
+                              //     //   pw.Page(
+                              //     //     build: (pw.Context context) =>
+                              //     //         pw.Container(
+                              //     //       child: pw.Text('Hello World!'),
+                              //     //     ),
+                              //     //   ),
+                              //     // );
+                              //     // final file = File('example.pdf');
+                              //     // await file.writeAsBytes(await pdf.save());
+                              // },
+                              // )
                             ])),
                   ]),
             ),
@@ -727,211 +786,385 @@ class _DetailScreenState extends State<DetailScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        DefaultTabController(
-                            length: 5,
-                            initialIndex: 1,
-                            child: Center(
-                                child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 1),
-                                    child: Column(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
-                                        children: <Widget>[
-                                          Material(
-                                            child: TabBar(
-                                              onTap: (index) => {
-                                                setState(() {
-                                                  currentType =
-                                                      toggleType(index);
-                                                })
-                                              },
-                                              indicatorColor: Colors.green,
-                                              tabs: [
-                                                Tab(
-                                                  text: "Hour",
+                        Column(children: [
+                          DefaultTabController(
+                              length: 4,
+                              initialIndex: 1,
+                              child: Center(
+                                  child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 1),
+                                      child: Column(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: <Widget>[
+                                            Material(
+                                              child: TabBar(
+                                                onTap: (index) => {
+                                                  setState(() {
+                                                    currentType =
+                                                        toggleType(index);
+                                                  })
+                                                },
+                                                indicatorColor: Colors.green,
+                                                tabs: [
+                                                  Tab(
+                                                    text: "Hour",
+                                                  ),
+                                                  Tab(
+                                                    text: "Day",
+                                                  ),
+                                                  Tab(
+                                                    text: "Week",
+                                                  ),
+                                                  Tab(
+                                                    text: "Month",
+                                                  ),
+                                                  // Tab(
+                                                  //   text: "Year",
+                                                  // ),
+                                                ],
+                                                labelColor: Colors.black,
+                                                indicator: MaterialIndicator(
+                                                  height: 5,
+                                                  topLeftRadius: 8,
+                                                  topRightRadius: 8,
+                                                  horizontalPadding: 5,
+                                                  tabPosition:
+                                                      TabPosition.bottom,
                                                 ),
-                                                Tab(
-                                                  text: "Day",
-                                                ),
-                                                Tab(
-                                                  text: "Week",
-                                                ),
-                                                Tab(
-                                                  text: "Month",
-                                                ),
-                                                Tab(
-                                                  text: "Year",
-                                                ),
-                                              ],
-                                              labelColor: Colors.black,
-                                              indicator: MaterialIndicator(
-                                                height: 5,
-                                                topLeftRadius: 8,
-                                                topRightRadius: 8,
-                                                horizontalPadding: 5,
-                                                tabPosition: TabPosition.bottom,
                                               ),
+                                            )
+                                          ])))),
+                          Text(''),
+                          Column(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              dataFetchEnd == false
+                                  ? Center(
+                                      // height:
+                                      //     MediaQuery.of(context).size.height * 0.85,
+                                      child: Container(
+                                      padding: EdgeInsets.all(4),
+                                      height:
+                                          MediaQuery.of(context).size.height *
+                                              0.75,
+                                      child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            Text(
+                                              log,
+                                              style: thinTextStyle,
                                             ),
-                                          )
-                                        ])))),
-                        Text(''),
-                        Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            dataFetchEnd == false
-                                ? Center(
-                                    // height:
-                                    //     MediaQuery.of(context).size.height * 0.85,
-                                    child: Container(
-                                    padding: EdgeInsets.all(4),
-                                    height: MediaQuery.of(context).size.height *
-                                        0.85,
-                                    child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.center,
+                                            Text(''),
+                                            log == '데이터 가져오는 중'
+                                                ? CircularProgressIndicator(
+                                                    backgroundColor:
+                                                        Colors.black26,
+                                                  )
+                                                : SizedBox(),
+                                          ]),
+                                    ))
+                                  : Container(
+                                      padding: EdgeInsets.all(4),
+                                      // height: MediaQuery.of(context).size.height *
+                                      //     0.7,
+                                      child: Column(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
+                                        children: [
+                                          Column(
+                                            children: [
+                                              SfCartesianChart(
+                                                  primaryYAxis: NumericAxis(
+                                                      maximum: 40,
+                                                      interval: 10,
+                                                      minimum: 0,
+                                                      plotBands: <PlotBand>[
+                                                        PlotBand(
+                                                          horizontalTextAlignment:
+                                                              TextAnchor.end,
+                                                          shouldRenderAboveSeries:
+                                                              false,
+                                                          text: '$_minTemp°C',
+                                                          textStyle: TextStyle(
+                                                              color: Colors.red,
+                                                              fontSize: 12,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold),
+                                                          isVisible: true,
+                                                          start: _minTemp,
+                                                          end: _minTemp,
+                                                          borderWidth: 2,
+                                                          // color: Colors.red,
+                                                          // opacity: 0.3,
+                                                          // color: Color.fromRGBO(
+                                                          //     255, 255, 255, 1.0),
+                                                          borderColor:
+                                                              Colors.red,
+                                                        ),
+                                                        PlotBand(
+                                                          horizontalTextAlignment:
+                                                              TextAnchor.end,
+                                                          shouldRenderAboveSeries:
+                                                              false,
+                                                          text: '$_maxTemp°C',
+                                                          textStyle: TextStyle(
+                                                              color: Colors.red,
+                                                              fontSize: 12,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold),
+                                                          isVisible: true,
+                                                          start: _maxTemp,
+                                                          end: _maxTemp,
+                                                          borderWidth: 2,
+                                                          // color: Colors.grey,
+                                                          // opacity: 0.3
+                                                          // color: Color.fromRGBO(
+                                                          //     255, 255, 255, 1.0),
+                                                          borderColor:
+                                                              Colors.red,
+                                                        )
+                                                      ]),
+                                                  primaryXAxis: DateTimeAxis(
+                                                      labelRotation: 5,
+                                                      maximumLabels: 5,
+                                                      // Set name for x axis in order to use it in the callback event.
+                                                      name: 'primaryXAxis',
+                                                      intervalType: currentType,
+                                                      majorGridLines:
+                                                          MajorGridLines(
+                                                              width: 1)),
+
+                                                  // Chart title
+                                                  title: ChartTitle(
+                                                      text: '온도 그래프'),
+                                                  // Enable legend
+                                                  legend:
+                                                      Legend(isVisible: false),
+                                                  // Enable tooltip
+                                                  tooltipBehavior:
+                                                      TooltipBehavior(
+                                                          enable: true),
+                                                  series: <
+                                                      ChartSeries<LogData,
+                                                          DateTime>>[
+                                                    LineSeries<LogData,
+                                                            DateTime>(
+                                                        dataSource:
+                                                            filteredDatas,
+                                                        xValueMapper:
+                                                            (LogData data, _) {
+                                                          return data.timestamp;
+                                                        },
+                                                        yValueMapper: (LogData
+                                                                    data,
+                                                                _) =>
+                                                            data.temperature,
+                                                        name: '온도',
+                                                        // Enable data label
+                                                        dataLabelSettings:
+                                                            DataLabelSettings(
+                                                                isVisible:
+                                                                    false))
+                                                  ]),
+                                              dataFetchEnd == true
+                                                  ? Text(filteredDatas[
+                                                              filteredDatas
+                                                                      .length -
+                                                                  1]
+                                                          .timestamp
+                                                          .toLocal()
+                                                          .toString()
+                                                          .substring(0, 19) +
+                                                      ' ~ ' +
+                                                      filteredDatas[0]
+                                                          .timestamp
+                                                          .toLocal()
+                                                          .toString()
+                                                          .substring(0, 19))
+                                                  : Text(''),
+                                              // Text('총 데이터 (1분 단위) : ' +
+                                              //     count.toString() +
+                                              //     '개'),
+                                            ],
+                                            // 1분단위 세시간 -> 180개 -> 3분단위 -> 60개 -> 3분단위 100 -> 300 분 5시간 ?
+                                          ),
+                                        ],
+                                      ))
+                            ],
+                          ),
+                          dataFetchEnd == true
+                              ? Container(
+                                  margin: EdgeInsets.all(8),
+                                  padding: EdgeInsets.all(8),
+                                  child: DateTimePicker(
+                                    type: DateTimePickerType.dateTimeSeparate,
+                                    dateMask: 'yyyy/MM/dd',
+                                    initialValue: startDateTime.toString(),
+                                    firstDate: DateTime.now()
+                                        .toLocal()
+                                        .subtract(Duration(days: 30)),
+                                    lastDate: DateTime.now().toLocal(),
+                                    icon: Icon(Icons.event),
+                                    dateLabelText: '시작날짜',
+                                    timeLabelText: "시간",
+                                    selectableDayPredicate: (date) {
+                                      // Disable weekend days to select from the calendar
+
+                                      return true;
+                                    },
+                                    onChanged: (val) => setState(() =>
+                                        startDateTime = DateTime.parse(val)),
+                                    validator: (val) {
+                                      print(val + '12');
+                                      return null;
+                                    },
+                                    onSaved: (val) => print(val + '123'),
+                                  ),
+                                )
+                              : SizedBox(),
+                          dataFetchEnd == true
+                              ? Container(
+                                  margin: EdgeInsets.all(8),
+                                  padding: EdgeInsets.all(16),
+                                  child: DateTimePicker(
+                                    type: DateTimePickerType.dateTimeSeparate,
+                                    dateMask: 'yyyy/MM/dd',
+                                    initialValue:
+                                        endDateTime.toLocal().toString(),
+                                    firstDate: DateTime.now()
+                                        .toLocal()
+                                        .subtract(Duration(days: 30)),
+                                    lastDate: DateTime.now().toLocal(),
+                                    icon: Icon(Icons.event),
+                                    dateLabelText: '종료날짜',
+                                    timeLabelText: "시간",
+                                    selectableDayPredicate: (date) {
+                                      // Disable weekend days to select from the calendar
+
+                                      return true;
+                                    },
+                                    onChanged: (val) => setState(() =>
+                                        endDateTime = DateTime.parse(val)),
+                                    validator: (val) {
+                                      print(val + '12');
+                                      return null;
+                                    },
+                                    onSaved: (val) => print(val + '123'),
+                                  ),
+                                )
+                              : SizedBox(),
+                          dataFetchEnd == true
+                              ? InkWell(
+                                  onTap: () {
+                                    // 조회 Function
+                                    // 1. 시작시간 종료시간 필터링
+                                    // 2. 그래프 refresh
+                                    refreshFilteredData();
+                                    print(startDateTime.toString());
+                                    print(endDateTime.toString());
+                                  },
+                                  child: Container(
+                                      decoration: BoxDecoration(
+                                          color:
+                                              Color.fromRGBO(100, 137, 254, 1),
+                                          boxShadow: [customeBoxShadow()],
+                                          borderRadius: BorderRadius.all(
+                                              Radius.circular(5))),
+                                      margin: EdgeInsets.all(8),
+                                      padding: EdgeInsets.all(16),
+                                      child: Row(
                                         mainAxisAlignment:
                                             MainAxisAlignment.center,
                                         children: [
                                           Text(
-                                            log,
-                                            style: thinTextStyle,
+                                            '조회하기',
+                                            style:
+                                                TextStyle(color: Colors.white),
                                           ),
-                                          Text(''),
-                                          log == '데이터 가져오는 중'
-                                              ? CircularProgressIndicator(
-                                                  backgroundColor:
-                                                      Colors.black26,
-                                                )
-                                              : SizedBox(),
-                                        ]),
-                                  ))
-                                : Container(
-                                    padding: EdgeInsets.all(4),
-                                    // height: MediaQuery.of(context).size.height *
-                                    //     0.7,
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        Column(
-                                          children: [
-                                            SfCartesianChart(
-                                                primaryYAxis: NumericAxis(
-                                                    maximum: 40,
-                                                    interval: 10,
-                                                    minimum: 0,
-                                                    plotBands: <PlotBand>[
-                                                      PlotBand(
-                                                        horizontalTextAlignment:
-                                                            TextAnchor.end,
-                                                        shouldRenderAboveSeries:
-                                                            false,
-                                                        text: '$_minTemp°C',
-                                                        textStyle: TextStyle(
-                                                            color: Colors.red,
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .bold),
-                                                        isVisible: true,
-                                                        start: _minTemp,
-                                                        end: _minTemp,
-                                                        borderWidth: 2,
-                                                        // color: Colors.red,
-                                                        // opacity: 0.3,
-                                                        // color: Color.fromRGBO(
-                                                        //     255, 255, 255, 1.0),
-                                                        borderColor: Colors.red,
-                                                      ),
-                                                      PlotBand(
-                                                        horizontalTextAlignment:
-                                                            TextAnchor.end,
-                                                        shouldRenderAboveSeries:
-                                                            false,
-                                                        text: '$_maxTemp°C',
-                                                        textStyle: TextStyle(
-                                                            color: Colors.red,
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .bold),
-                                                        isVisible: true,
-                                                        start: _maxTemp,
-                                                        end: _maxTemp,
-                                                        borderWidth: 2,
-                                                        // color: Colors.grey,
-                                                        // opacity: 0.3
-                                                        // color: Color.fromRGBO(
-                                                        //     255, 255, 255, 1.0),
-                                                        borderColor: Colors.red,
-                                                      )
-                                                    ]),
-                                                primaryXAxis: DateTimeAxis(
-                                                    labelRotation: 5,
-                                                    maximumLabels: 5,
-                                                    // Set name for x axis in order to use it in the callback event.
-                                                    name: 'primaryXAxis',
-                                                    intervalType: currentType,
-                                                    majorGridLines:
-                                                        MajorGridLines(
-                                                            width: 1)),
-
-                                                // Chart title
-                                                title:
-                                                    ChartTitle(text: '온도 그래프'),
-                                                // Enable legend
-                                                legend:
-                                                    Legend(isVisible: false),
-                                                // Enable tooltip
-                                                tooltipBehavior:
-                                                    TooltipBehavior(
-                                                        enable: true),
-                                                series: <
-                                                    ChartSeries<LogData,
-                                                        DateTime>>[
-                                                  LineSeries<LogData, DateTime>(
-                                                      dataSource: filteredDatas,
-                                                      xValueMapper:
-                                                          (LogData data, _) {
-                                                        return data.timestamp;
-                                                      },
-                                                      yValueMapper:
-                                                          (LogData data, _) =>
-                                                              data.temperature,
-                                                      name: '온도',
-                                                      // Enable data label
-                                                      dataLabelSettings:
-                                                          DataLabelSettings(
-                                                              isVisible: false))
-                                                ]),
-                                            dataFetchEnd == true
-                                                ? Text(filteredDatas[
-                                                            filteredDatas
-                                                                    .length -
-                                                                1]
-                                                        .timestamp
-                                                        .toString()
-                                                        .substring(0, 19) +
-                                                    ' ~ ' +
-                                                    filteredDatas[0]
-                                                        .timestamp
-                                                        .toString()
-                                                        .substring(0, 19))
-                                                : Text(''),
-                                            // Text('총 데이터 (1분 단위) : ' +
-                                            //     count.toString() +
-                                            //     '개'),
-                                          ],
-                                          // 1분단위 세시간 -> 180개 -> 3분단위 -> 60개 -> 3분단위 100 -> 300 분 5시간 ?
-                                        ),
-                                      ],
-                                    ))
-                          ],
-                        )
+                                        ],
+                                      )),
+                                )
+                              : SizedBox(),
+                        ]),
+                        dataFetchEnd == true
+                            ? Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceAround,
+                                children: [
+                                  Expanded(
+                                      flex: 1,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          await exportxlsx();
+                                        },
+                                        child: Container(
+                                            decoration: BoxDecoration(
+                                                color: Color.fromRGBO(
+                                                    170, 170, 170, 1),
+                                                boxShadow: [customeBoxShadow()],
+                                                borderRadius: BorderRadius.all(
+                                                    Radius.circular(5))),
+                                            margin: EdgeInsets.all(8),
+                                            padding: EdgeInsets.all(8),
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  'EXPORT DATA AS Excel',
+                                                ),
+                                              ],
+                                            )),
+                                      )),
+                                  Expanded(
+                                      flex: 1,
+                                      child: InkWell(
+                                        onTap: () async {
+                                          await takeScreenshot();
+                                          // showUploadDialog(
+                                          //     context, filteredDatas.length);
+                                          // sendFetchData();
+                                          await uploadPDF2();
+                                        },
+                                        child: Container(
+                                            decoration: BoxDecoration(
+                                                color: Color.fromRGBO(
+                                                    170, 170, 170, 1),
+                                                boxShadow: [customeBoxShadow()],
+                                                borderRadius: BorderRadius.all(
+                                                    Radius.circular(5))),
+                                            margin: EdgeInsets.all(8),
+                                            padding: EdgeInsets.all(8),
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  'EXPORT DATA AS PDF',
+                                                ),
+                                              ],
+                                            )),
+                                      )),
+                                ],
+                              )
+                            : SizedBox(),
                       ],
                     )))));
   }
+}
+
+BoxShadow customeBoxShadow() {
+  return BoxShadow(
+      color: Colors.black.withOpacity(0.2),
+      offset: Offset(0, 1),
+      blurRadius: 6);
 }
 
 TextStyle thinTextStyle = TextStyle(
