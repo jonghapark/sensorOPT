@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'dart:ui' as ui;
 import 'package:sensoropt/models/model_bleDevice.dart';
 import 'package:sensoropt/models/model_logdata.dart';
 import 'package:sensoropt/utils/util.dart';
-
+import 'package:syncfusion_flutter_signaturepad/signaturepad.dart';
 import 'dart:typed_data';
 import 'dart:convert';
 import 'dart:async';
@@ -29,9 +30,12 @@ import 'package:excel/excel.dart' as ex;
 
 class DetailScreen extends StatefulWidget {
   final BleDeviceItem currentDevice;
-  final Uint8List minmaxStamp;
+  final Uint8List startIndex;
+  final Uint8List endindex;
+  final int duration;
 
-  DetailScreen({this.currentDevice, this.minmaxStamp});
+  DetailScreen(
+      {this.currentDevice, this.startIndex, this.endindex, this.duration});
 
   @override
   _DetailScreenState createState() => _DetailScreenState();
@@ -49,10 +53,13 @@ class _DetailScreenState extends State<DetailScreen> {
   List<LogData> filteredDatas = [];
   int count = 0;
   int unConditionalCount = 0;
+  int currentindex = 1;
   double min = 100;
   double max = -100;
-  int _minTemp = 4;
-  int _maxTemp = 28;
+  double minTemp = -10;
+  double maxTemp = 40;
+  int _minTemp = 2;
+  int _maxTemp = 8;
   bool isSwitchedHumi = true;
   DateTime startDateTime = DateTime.now().subtract(Duration(hours: 1));
   DateTime endDateTime = DateTime.now();
@@ -98,8 +105,9 @@ class _DetailScreenState extends State<DetailScreen> {
         temp.add(fetchDatas[i]);
       }
     }
+    List<LogData> reversedTemp = List.from(temp.reversed);
     setState(() {
-      filteredDatas = temp;
+      filteredDatas = reversedTemp;
     });
     // print(filteredDatas[0].timestamp.toString());
     // print(filteredDatas[1].timestamp.toString());
@@ -255,7 +263,7 @@ class _DetailScreenState extends State<DetailScreen> {
     }
 
     // the downloads folder path
-    final directory = await getExternalStorageDirectory();
+    final directory = await getApplicationDocumentsDirectory();
     final path = directory.path;
     var filePath = path;
     pdf = pw.Document();
@@ -273,8 +281,9 @@ class _DetailScreenState extends State<DetailScreen> {
     String now = DateTime.now().toString();
     File pdfFile = File(filePath + '/report_' + now + '.pdf');
     pdfFile.writeAsBytesSync(await pdf.save());
-    print('pdf 저장완료');
 
+    print('pdf 저장완료');
+    await pdfFile.copy(filePath + '/report/' + now + '.pdf');
     await Share.file('결과', '/report_' + now + '.pdf',
             await pdfFile.readAsBytes(), 'application/pdf',
             text: 'SensorOPT 결과 파일입니다.')
@@ -340,7 +349,71 @@ class _DetailScreenState extends State<DetailScreen> {
     }
   }
 
-  void uploadPDF2() async {
+  saveSignature(
+      BuildContext context, GlobalKey<SfSignaturePadState> _signaturePadKey) {
+    return showDialog(
+      barrierDismissible: false,
+      context: context,
+      builder: (context) {
+        return Dialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
+          backgroundColor: Colors.grey[200],
+          elevation: 16.0,
+          child: Container(
+              width: MediaQuery.of(context).size.width / 2,
+              height: MediaQuery.of(context).size.height / 3,
+              padding: EdgeInsets.all(10.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Expanded(
+                    flex: 4,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Text('서명'),
+                        Container(
+                          child: SfSignaturePad(
+                            minimumStrokeWidth: 2,
+                            maximumStrokeWidth: 3,
+                            key: _signaturePadKey,
+                            backgroundColor: Color.fromRGBO(255, 255, 255, 1),
+                          ),
+                          height: 200,
+                          width: 300,
+                        ),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            RaisedButton(
+                                child: Text("저장"),
+                                onPressed: () async {
+                                  ui.Image image = await _signaturePadKey
+                                      .currentState
+                                      .toImage(pixelRatio: 3.0);
+
+                                  Navigator.of(context).pop(image);
+                                }),
+                            RaisedButton(
+                                child: Text("다시 그리기"),
+                                onPressed: () async {
+                                  await _signaturePadKey.currentState.clear();
+                                }),
+                          ],
+                        )
+                      ],
+                    ),
+                  ),
+                ],
+              )),
+        );
+      },
+    );
+  }
+
+  void uploadPDF2(ui.Image signatureImage) async {
     // storage permission ask
 
     var status = await Permission.storage.status;
@@ -360,6 +433,19 @@ class _DetailScreenState extends State<DetailScreen> {
         build: (pw.Context context) {
           return pw.Center(
               child: pw.Image(pw.MemoryImage(_imageFile),
+                  fit: pw.BoxFit.contain)); //getting error here
+        },
+      ),
+    );
+
+    ByteData signImage =
+        await signatureImage.toByteData(format: ui.ImageByteFormat.png);
+    await pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        build: (pw.Context context) {
+          return pw.Center(
+              child: pw.Image(pw.MemoryImage(signImage.buffer.asUint8List()),
                   fit: pw.BoxFit.contain)); //getting error here
         },
       ),
@@ -485,7 +571,7 @@ class _DetailScreenState extends State<DetailScreen> {
   dataFiltering(int index) {
     List<LogData> tmp = [];
     if (index == 0) {
-      DateTime oneHourAgo = DateTime.now().subtract(Duration(hours: 3));
+      DateTime oneHourAgo = DateTime.now().subtract(Duration(hours: 1));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
         if (fetchDatas[i].timestamp.isAfter(oneHourAgo))
           tmp.add(fetchDatas[i]);
@@ -497,7 +583,7 @@ class _DetailScreenState extends State<DetailScreen> {
         filteredDatas = tmp;
       });
     } else if (index == 1) {
-      DateTime oneDayAgo = DateTime.now().subtract(Duration(days: 1, hours: 1));
+      DateTime oneDayAgo = DateTime.now().subtract(Duration(days: 1));
       for (int i = fetchDatas.length - 1; i > 0; i--) {
         if (fetchDatas[i].timestamp.isAfter(oneDayAgo)) {
           if (i % 2 == 0) {
@@ -593,10 +679,19 @@ class _DetailScreenState extends State<DetailScreen> {
     // DeviceInfo temp =
     //     await DBHelper().getDevice(widget.currentDevice.getserialNumber());
     // isSwitchedHumi = temp.isDesiredConditionOn == 'true' ? true : false;
+    List<TempInfo> tempList = await DBHelper().getAllTemps();
+    if (tempList.isEmpty) {
+      // await DBHelper().initDB();
+      minTemp = -10;
+      maxTemp = 40;
+    } else {
+      minTemp = tempList[0].minTemp.toDouble();
+      maxTemp = tempList[0].maxTemp.toDouble();
+    }
 
     await monitorCharacteristic(widget.currentDevice.peripheral);
     print('Write Start');
-    print(widget.minmaxStamp.toString());
+    // print(widget.minmaxStamp.toString());
     // int tmp =
     //     ByteData.sublistView(widget.minmaxStamp.sublist(0, 3)).getInt32(0);
     // print(tmp);
@@ -611,7 +706,8 @@ class _DetailScreenState extends State<DetailScreen> {
               Uint8List.fromList([0x55, 0xAA, 0x01, 0x05] +
                   widget.currentDevice.getMacAddress() +
                   [0x04, 0x06] +
-                  widget.minmaxStamp),
+                  widget.startIndex +
+                  widget.endindex),
               true);
     } else if (widget.currentDevice.peripheral.name == 'T306') {
       var writeCharacteristics = await widget.currentDevice.peripheral
@@ -621,7 +717,8 @@ class _DetailScreenState extends State<DetailScreen> {
               Uint8List.fromList([0x55, 0xAA, 0x01, 0x06] +
                   widget.currentDevice.getMacAddress() +
                   [0x04, 0x06] +
-                  widget.minmaxStamp),
+                  widget.startIndex +
+                  widget.endindex),
               true);
     }
   }
@@ -631,10 +728,13 @@ class _DetailScreenState extends State<DetailScreen> {
     await monitoringStreamSubscription?.cancel();
     monitoringStreamSubscription = characteristicUpdates.listen(
       (notifyResult) async {
-        // print(notifyResult.toString());
         if (notifyResult[10] == 0x05) {
           //TODO: 데이터 읽어오기
+          // print(notifyResult.toString());
           LogData temp = transformData(notifyResult);
+          setState(() {
+            currentindex += 1;
+          });
           if (count % 5 == 0) {
             fetchDatas.add(temp);
           }
@@ -644,7 +744,13 @@ class _DetailScreenState extends State<DetailScreen> {
         else if (notifyResult[10] == 0x06) {
           print('총 몇개? ' + fetchDatas.length.toString());
           print('Read End !');
-          dataFiltering(1);
+          if (fetchDatas.length > 500) {
+            currentType = DateTimeIntervalType.auto;
+            dataFiltering(3);
+          } else {
+            dataFiltering(1);
+          }
+
           setState(() {
             // filteredDatas = fetchDatas;
             dataFetchEnd = true;
@@ -702,6 +808,7 @@ class _DetailScreenState extends State<DetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    GlobalKey<SfSignaturePadState> _signaturePadKey = GlobalKey();
     final scaffoldKey = GlobalKey<ScaffoldState>();
     return MaterialApp(
         builder: (context, child) {
@@ -714,69 +821,35 @@ class _DetailScreenState extends State<DetailScreen> {
         title: 'OPTILO',
         theme: ThemeData(
           // primarySwatch: Colors.grey,
-          primaryColor: Color.fromRGBO(100, 137, 254, 1),
+          backgroundColor: Color.fromRGBO(0, 66, 166, 1),
           //canvasColor: Colors.transparent,
         ),
         home: Scaffold(
             key: scaffoldKey,
             appBar: AppBar(
-              // backgroundColor: Color.fromARGB(22, 27, 32, 1),
+              backgroundColor: Color.fromRGBO(0, 66, 166, 1),
               title: Row(
                   // mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
+                    Expanded(flex: 3, child: SizedBox()),
                     Expanded(
                       flex: 7,
                       child: Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            Text(
-                              'SensorOpt',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize:
-                                      MediaQuery.of(context).size.width / 18,
-                                  fontWeight: FontWeight.w600),
+                            Image(
+                              image: AssetImage('images/background.png'),
+                              fit: BoxFit.contain,
+                              width: MediaQuery.of(context).size.width * 0.4,
+                              // height: MediaQuery.of(context).size.width * 0.1,
                             ),
                           ]),
                     ),
                     Expanded(
-                        flex: 4,
-                        child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              SizedBox()
-                              // new IconButton(
-                              //   icon: new Icon(Icons.share, size: 30),
-                              //   onPressed: () async {
-                              //     scaffoldKey.currentState
-                              //         .showSnackBar(SnackBar(
-                              //       duration: Duration(seconds: 2),
-                              //       content: Text('운송 결과 PDF를 생성중입니다.',
-                              //           style: TextStyle(fontSize: 18)),
-                              //     ));
-
-                              //     await takeScreenshot();
-                              //     // showUploadDialog(
-                              //     //     context, filteredDatas.length);
-                              //     // sendFetchData();
-
-                              //     await uploadPDF2();
-                              //     // final pdf = pw.Document();
-
-                              //     // pdf.addPage(
-                              //     //   pw.Page(
-                              //     //     build: (pw.Context context) =>
-                              //     //         pw.Container(
-                              //     //       child: pw.Text('Hello World!'),
-                              //     //     ),
-                              //     //   ),
-                              //     // );
-                              //     // final file = File('example.pdf');
-                              //     // await file.writeAsBytes(await pdf.save());
-                              // },
-                              // )
-                            ])),
+                      flex: 4,
+                      child: SizedBox(),
+                    )
                   ]),
             ),
             body: Screenshot(
@@ -787,56 +860,68 @@ class _DetailScreenState extends State<DetailScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Column(children: [
-                          DefaultTabController(
-                              length: 4,
-                              initialIndex: 1,
-                              child: Center(
-                                  child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 1),
-                                      child: Column(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.center,
-                                          children: <Widget>[
-                                            Material(
-                                              child: TabBar(
-                                                onTap: (index) => {
-                                                  setState(() {
-                                                    currentType =
-                                                        toggleType(index);
-                                                  })
-                                                },
-                                                indicatorColor: Colors.green,
-                                                tabs: [
-                                                  Tab(
-                                                    text: "Hour",
-                                                  ),
-                                                  Tab(
-                                                    text: "Day",
-                                                  ),
-                                                  Tab(
-                                                    text: "Week",
-                                                  ),
-                                                  Tab(
-                                                    text: "Month",
-                                                  ),
-                                                  // Tab(
-                                                  //   text: "Year",
-                                                  // ),
-                                                ],
-                                                labelColor: Colors.black,
-                                                indicator: MaterialIndicator(
-                                                  height: 5,
-                                                  topLeftRadius: 8,
-                                                  topRightRadius: 8,
-                                                  horizontalPadding: 5,
-                                                  tabPosition:
-                                                      TabPosition.bottom,
-                                                ),
-                                              ),
-                                            )
-                                          ])))),
-                          Text(''),
+                          // DefaultTabController(
+                          //     length: 4,
+                          //     initialIndex: 1,
+                          //     child: Center(
+                          //         child: Padding(
+                          //             padding: const EdgeInsets.symmetric(
+                          //                 horizontal: 1),
+                          //             child: Column(
+                          //                 mainAxisAlignment:
+                          //                     MainAxisAlignment.center,
+                          //                 children: <Widget>[
+                          //                   Material(
+                          //                     child: TabBar(
+                          //                       onTap: (index) => {
+                          //                         setState(() {
+                          //                           currentType =
+                          //                               toggleType(index);
+                          //                         })
+                          //                       },
+                          //                       indicatorColor: Colors.green,
+                          //                       tabs: [
+                          //                         Tab(
+                          //                           text: "시간",
+                          //                         ),
+                          //                         Tab(
+                          //                           text: "하루",
+                          //                         ),
+                          //                         Tab(
+                          //                           text: "일주일",
+                          //                         ),
+                          //                         Tab(
+                          //                           text: "한달",
+                          //                         ),
+                          //                         // Tab(
+                          //                         //   text: "Year",
+                          //                         // ),
+                          //                       ],
+                          //                       labelColor: Colors.black,
+                          //                       indicator: MaterialIndicator(
+                          //                         height: 5,
+                          //                         topLeftRadius: 8,
+                          //                         topRightRadius: 8,
+                          //                         horizontalPadding: 5,
+                          //                         tabPosition:
+                          //                             TabPosition.bottom,
+                          //                       ),
+                          //                     ),
+                          //                   )
+                          //                 ])))),
+                          fetchDatas.length < 500
+                              ? Text(
+                                  widget.currentDevice.getserialNumber() +
+                                      ' (하루)',
+                                  style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800))
+                              : Text(
+                                  widget.currentDevice.getserialNumber() +
+                                      ' (한달)',
+                                  style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800)),
                           Column(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -866,6 +951,18 @@ class _DetailScreenState extends State<DetailScreen> {
                                                         Colors.black26,
                                                   )
                                                 : SizedBox(),
+                                            log == '데이터 가져오는 중'
+                                                ? Text('\n' +
+                                                    (currentindex /
+                                                            (threeBytesToint(widget
+                                                                    .endindex) -
+                                                                threeBytesToint(
+                                                                    widget
+                                                                        .startIndex)) *
+                                                            100)
+                                                        .toStringAsFixed(0) +
+                                                    ' %')
+                                                : SizedBox(),
                                           ]),
                                     ))
                                   : Container(
@@ -880,9 +977,9 @@ class _DetailScreenState extends State<DetailScreen> {
                                             children: [
                                               SfCartesianChart(
                                                   primaryYAxis: NumericAxis(
-                                                      maximum: 40,
-                                                      interval: 10,
-                                                      minimum: 0,
+                                                      maximum: maxTemp,
+                                                      interval: 5,
+                                                      minimum: minTemp,
                                                       plotBands: <PlotBand>[
                                                         PlotBand(
                                                           horizontalTextAlignment:
@@ -1007,11 +1104,10 @@ class _DetailScreenState extends State<DetailScreen> {
                                     type: DateTimePickerType.dateTimeSeparate,
                                     dateMask: 'yyyy/MM/dd',
                                     initialValue: startDateTime.toString(),
-                                    firstDate: DateTime.now()
-                                        .toLocal()
-                                        .subtract(Duration(days: 30)),
+                                    firstDate: filteredDatas.last.timestamp,
                                     lastDate: DateTime.now().toLocal(),
-                                    icon: Icon(Icons.event),
+                                    icon: Icon(Icons.event,
+                                        color: Color.fromRGBO(2, 109, 194, 1)),
                                     dateLabelText: '시작날짜',
                                     timeLabelText: "시간",
                                     selectableDayPredicate: (date) {
@@ -1038,11 +1134,10 @@ class _DetailScreenState extends State<DetailScreen> {
                                     dateMask: 'yyyy/MM/dd',
                                     initialValue:
                                         endDateTime.toLocal().toString(),
-                                    firstDate: DateTime.now()
-                                        .toLocal()
-                                        .subtract(Duration(days: 30)),
+                                    firstDate: startDateTime,
                                     lastDate: DateTime.now().toLocal(),
-                                    icon: Icon(Icons.event),
+                                    icon: Icon(Icons.event,
+                                        color: Color.fromRGBO(2, 109, 194, 1)),
                                     dateLabelText: '종료날짜',
                                     timeLabelText: "시간",
                                     selectableDayPredicate: (date) {
@@ -1066,14 +1161,15 @@ class _DetailScreenState extends State<DetailScreen> {
                                     // 조회 Function
                                     // 1. 시작시간 종료시간 필터링
                                     // 2. 그래프 refresh
-                                    refreshFilteredData();
-                                    print(startDateTime.toString());
-                                    print(endDateTime.toString());
+                                    if (startDateTime.isBefore(endDateTime)) {
+                                      refreshFilteredData();
+                                      print(startDateTime.toString());
+                                      print(endDateTime.toString());
+                                    }
                                   },
                                   child: Container(
                                       decoration: BoxDecoration(
-                                          color:
-                                              Color.fromRGBO(100, 137, 254, 1),
+                                          color: Color.fromRGBO(2, 109, 194, 1),
                                           boxShadow: [customeBoxShadow()],
                                           borderRadius: BorderRadius.all(
                                               Radius.circular(5))),
@@ -1118,7 +1214,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                                   MainAxisAlignment.center,
                                               children: [
                                                 Text(
-                                                  'EXPORT DATA AS Excel',
+                                                  'EXCEL로 내보내기',
                                                 ),
                                               ],
                                             )),
@@ -1131,7 +1227,10 @@ class _DetailScreenState extends State<DetailScreen> {
                                           // showUploadDialog(
                                           //     context, filteredDatas.length);
                                           // sendFetchData();
-                                          await uploadPDF2();
+                                          ui.Image result = await saveSignature(
+                                              context, _signaturePadKey);
+                                          print(result.height.toString());
+                                          await uploadPDF2(result);
                                         },
                                         child: Container(
                                             decoration: BoxDecoration(
@@ -1147,7 +1246,7 @@ class _DetailScreenState extends State<DetailScreen> {
                                                   MainAxisAlignment.center,
                                               children: [
                                                 Text(
-                                                  'EXPORT DATA AS PDF',
+                                                  'PDF로 내보내기',
                                                 ),
                                               ],
                                             )),
@@ -1275,4 +1374,9 @@ showUploadDialog(BuildContext context, int size) {
       );
     },
   );
+}
+
+threeBytesToint(Uint8List temp) {
+  int r = ((temp[0] & 0xF) << 16) | ((temp[1] & 0xFF) << 8) | (temp[2] & 0xFF);
+  return r;
 }

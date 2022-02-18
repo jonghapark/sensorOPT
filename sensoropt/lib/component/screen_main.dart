@@ -24,6 +24,7 @@ class Scanscreen extends StatefulWidget {
 }
 
 class ScanscreenState extends State<Scanscreen> {
+  final scaffoldKey = GlobalKey<ScaffoldState>();
   BleManager _bleManager = BleManager();
   bool _isScanning = false;
   bool _connected = false;
@@ -50,12 +51,14 @@ class ScanscreenState extends State<Scanscreen> {
   Map<String, String> idMapper;
   // double width;
   TextEditingController _textFieldController;
+  TextEditingController _textFieldController2;
+  TextEditingController _textFieldController3;
   String currentState = '';
 
   String firstImagePath = '';
   String secondImagePath = '';
   Future<List<DeviceInfo>> _allDeviceTemp;
-
+  int duration = 30;
   // Future<List<DateTime>> allDatetime;
 
   String currentTemp;
@@ -151,7 +154,6 @@ class ScanscreenState extends State<Scanscreen> {
       (notifyResult) async {
         // print('혹시 이거임 ?' + notifyResult.toString());
         if (notifyResult[10] == 0x0a) {
-          // FIXME: 기존 데이터 삭제 후 ( 다이얼로그 종료 ) -> ( 운송 시작 다이얼로그 ) 변경
           await showMyDialog_StartTransport(context);
           Navigator.of(context).pop();
         }
@@ -163,35 +165,88 @@ class ScanscreenState extends State<Scanscreen> {
               break;
             }
           }
-
+          // 최소 최대 인덱스
           if (index != -1) {
-            Uint8List minmaxStamp = getMinMaxTimestamp(notifyResult);
-            print('여기 걸리나 ?');
-
-            if (flag == 0) {
-              await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => DetailScreen(
-                          currentDevice: deviceList[index],
-                          minmaxStamp: minmaxStamp)));
-              // await _stopMonitoringTemperature();
-            } else {
-              Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => EditScreen(
-                            currentDevice: deviceList[index],
-                          ))).then((value) => print(value));
-              await _stopMonitoringTemperature();
+            int deference = 1440;
+            if (duration == 30) {
+              deference = 43200;
+            } else if (duration == 1) {
+              deference = 1440;
             }
+            // if (deviceList[index].lastUpdateTime == null) {
+            //   deference = 10000;
+            // } else {
+            //   Duration temps = DateTime.now()
+            //       .toLocal()
+            //       .difference(deviceList[index].lastUpdateTime);
+
+            //   if (temps.inMinutes > 10000) {
+            //     deference = 10000;
+            //   } else {
+            //     deference = temps.inMinutes + 10;
+            //   }
+            // }
+            Uint8List minmaxStamp = getMinMaxTimestamp(notifyResult);
+
+            int startStamp = threeBytesToint(minmaxStamp.sublist(0, 3));
+            int endStamp = threeBytesToint(minmaxStamp.sublist(3, 6));
+            print(endStamp);
+            print(startStamp);
+            if (endStamp - startStamp < 43200 && duration == 30) {
+              deference = endStamp - startStamp;
+            }
+            int tempstamp =
+                threeBytesToint(minmaxStamp.sublist(3, 6)) - deference;
+            if (tempstamp < 0) {
+              // tempstamp += deference;
+              tempstamp = startStamp;
+            }
+
+            final startTest = Util.convertInt2Bytes(tempstamp, Endian.big, 3);
+            Uint8List startIndex = Uint8List.fromList(startTest);
+            // Uint8List startIndex = intToThreeBytes(tempstamp);
+            Uint8List endindex = minmaxStamp.sublist(3, 6);
+            print('Start Index : ' + tempstamp.toString());
+            print('End Index : ' + endStamp.toString());
+
+            await Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) => DetailScreen(
+                        currentDevice: deviceList[index],
+                        startIndex: startIndex,
+                        endindex: endindex,
+                        duration: duration)));
           }
+          // await _stopMonitoringTemperature();
+
+          // else {
+          //   Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //           builder: (context) => EditScreen(
+          //                 currentDevice: deviceList[index],
+          //               ))).then((value) => print(value));
+          //   await _stopMonitoringTemperature();
+          // }
+
         }
       },
       onError: (error) {
         final BleError temperrors = error;
         if (temperrors.errorCode.value == 201) {
           print('그르게');
+          int index = -1;
+          for (var i = 0; i < deviceList.length; i++) {
+            if (deviceList[i].peripheral.identifier == peripheral.identifier) {
+              index = i;
+              break;
+            }
+          }
+          scaffoldKey.currentState.showSnackBar(SnackBar(
+              content: Text(deviceList[index].getserialNumber() + ' 다시 시도해주세요.',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.bold))));
         }
         print("Error while monitoring characteristic \n$error");
       },
@@ -432,183 +487,279 @@ class ScanscreenState extends State<Scanscreen> {
       itemBuilder: (BuildContext context, int index) {
         return Container(
           decoration: BoxDecoration(
-              color: Colors.white,
+              // color: Colors.white,
               boxShadow: [customeBoxShadow()],
               borderRadius: BorderRadius.all(Radius.circular(5))),
-          height: MediaQuery.of(context).size.height * 0.12,
+          height: MediaQuery.of(context).size.height * 0.17,
           width: MediaQuery.of(context).size.width * 0.99,
           child: Column(children: [
             Expanded(
-              flex: 4,
+              flex: 5,
               child: Container(
-                  padding: EdgeInsets.only(top: 5, left: 2),
-                  width: MediaQuery.of(context).size.width * 0.98,
-                  decoration: BoxDecoration(
-                      color: Color.fromRGBO(100, 100, 100, 1),
-                      //boxShadow: [customeBoxShadow()],
-                      borderRadius: BorderRadius.all(Radius.circular(5))),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Row(
-                        children: [
-                          Text(' '),
-                          Expanded(
-                            flex: 1,
-                            child: Image(
-                              image: AssetImage('images/T301.png'),
-                              fit: BoxFit.contain,
-                              width: MediaQuery.of(context).size.width * 0.13,
-                              height: MediaQuery.of(context).size.width * 0.13,
-                            ),
+                padding: EdgeInsets.only(top: 5, bottom: 4, left: 2),
+                width: MediaQuery.of(context).size.width * 0.98,
+                decoration: BoxDecoration(
+                    color: Color.fromRGBO(230, 234, 238, 1),
+                    //boxShadow: [customeBoxShadow()],
+                    borderRadius: BorderRadius.all(Radius.circular(5))),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Row(
+                      children: [
+                        Text(' '),
+                        Expanded(
+                          flex: 1,
+                          child: Image(
+                            image: AssetImage('images/T301.png'),
+                            fit: BoxFit.contain,
+                            width: MediaQuery.of(context).size.width * 0.13,
+                            height: MediaQuery.of(context).size.width * 0.13,
                           ),
-                          Expanded(
-                            flex: 3,
-                            child: InkWell(
-                              onTap: () async {
-                                await Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (context) => EditScreen(
-                                              currentDevice: deviceList[index],
-                                            ))).then((value) => {
-                                      endRoutine(value, index),
-                                    });
-                                // 여기 2
-                                // await startRoutine(index);
-                              },
-                              child: FutureBuilder(
-                                  future: DBHelper().getAllDevices(),
-                                  builder: (BuildContext context,
-                                      AsyncSnapshot<List<DeviceInfo>>
-                                          snapshot) {
-                                    if (snapshot.hasData) {
-                                      List<DeviceInfo> devices = snapshot.data;
-                                      String temp = '';
-                                      for (int i = 0; i < devices.length; i++) {
-                                        // print(devices[i].macAddress);
-                                        // print(devices[i].macAddress);
-                                        // print(deviceList[index]
-                                        //     .getserialNumber());
-                                        if (devices[i].macAddress ==
-                                            deviceList[index]
-                                                .getserialNumber()) {
-                                          temp = devices[i].deviceName;
+                        ),
+                        Expanded(
+                          flex: 3,
+                          child: InkWell(
+                            onTap: () async {
+                              await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) => EditScreen(
+                                            currentDevice: deviceList[index],
+                                          ))).then((value) => {
+                                    endRoutine(value, index),
+                                  });
+                              // 여기 2
+                              // await startRoutine(index);
+                            },
+                            child: FutureBuilder(
+                                future: DBHelper().getAllDevices(),
+                                builder: (BuildContext context,
+                                    AsyncSnapshot<List<DeviceInfo>> snapshot) {
+                                  if (snapshot.hasData) {
+                                    List<DeviceInfo> devices = snapshot.data;
+                                    String temp = '';
+                                    for (int i = 0; i < devices.length; i++) {
+                                      // print(devices[i].macAddress);
+                                      // print(devices[i].macAddress);
+                                      // print(deviceList[index]
+                                      //     .getserialNumber());
+                                      if (devices[i].macAddress ==
+                                          deviceList[index].getserialNumber()) {
+                                        temp = devices[i].deviceName;
 
-                                          deviceList[index].firstPath =
-                                              devices[i].firstPath;
-                                          deviceList[index].secondPath =
-                                              devices[i].secondPath;
+                                        deviceList[index].firstPath =
+                                            devices[i].firstPath;
+                                        deviceList[index].secondPath =
+                                            devices[i].secondPath;
 
-                                          break;
-                                        }
+                                        break;
                                       }
-                                      if (temp == '') {
-                                        return Text(
-                                          deviceList[index].getDeviceId(),
-                                          style: whiteTextStyle(context),
-                                        );
-                                      } else {
-                                        deviceList[index].deviceName = temp;
-
-                                        return Text(
-                                          temp,
-                                          style: whiteTextStyle(context),
-                                        );
-                                      }
-                                    } else {
+                                    }
+                                    if (temp == '') {
                                       return Text(
                                         deviceList[index].getDeviceId(),
                                         style: whiteTextStyle(context),
                                       );
+                                    } else {
+                                      deviceList[index].deviceName = temp;
+
+                                      return Text(
+                                        temp,
+                                        style: whiteTextStyle(context),
+                                      );
                                     }
-                                  }),
-                            ),
+                                  } else {
+                                    return Text(
+                                      deviceList[index].getDeviceId(),
+                                      style: whiteTextStyle(context),
+                                    );
+                                  }
+                                }),
                           ),
-                          Expanded(
-                            flex: 3,
-                            child: InkWell(
-                              onTap: () async {
-                                // 여기 2
-                                await connect(index, 0);
-                              },
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image(
-                                    image:
-                                        AssetImage('images/ic_thermometer.png'),
-                                    fit: BoxFit.cover,
-                                    width: MediaQuery.of(context).size.width *
-                                        0.08,
-                                    height: MediaQuery.of(context).size.width *
-                                        0.08,
-                                  ),
-                                  Text(
-                                      deviceList[index]
-                                              .getTemperature()
-                                              .toString() +
-                                          '°C',
-                                      style: btnTextStyle(context)),
-                                ],
+                        ),
+                        Expanded(
+                          flex: 3,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Image(
+                                image: AssetImage('images/ic_thermometer.png'),
+                                fit: BoxFit.cover,
+                                width: MediaQuery.of(context).size.width * 0.08,
+                                height:
+                                    MediaQuery.of(context).size.width * 0.08,
                               ),
-                            ),
+                              Text(
+                                  deviceList[index]
+                                          .getTemperature()
+                                          .toString() +
+                                      '°C',
+                                  style: btnTextStyle(context)),
+                            ],
                           ),
-                        ],
-                      ),
-                      Row(
-                        children: [
-                          Expanded(
-                            flex: 3,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Row(
-                                  children: [
-                                    getbatteryImage(
-                                        deviceList[index].getBattery()),
-                                    Text(
-                                      '  ' +
-                                          deviceList[index]
-                                              .getBattery()
-                                              .toString() +
-                                          '%',
+                        ),
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Row(
+                                children: [
+                                  getbatteryImage(
+                                      deviceList[index].getBattery()),
+                                  Text(
+                                    '  ' +
+                                        deviceList[index]
+                                            .getBattery()
+                                            .toString() +
+                                        '%',
+                                    style: updateTextStyle(context),
+                                  ),
+                                ],
+                              )
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          flex: 8,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                '최근 업데이트  ',
+                                style: updateTextStyle(context),
+                              ),
+                              deviceList[index].lastUpdateTime != null
+                                  ? Text(
+                                      DateFormat('yyyy-MM-dd - HH:mm').format(
+                                          deviceList[index].lastUpdateTime),
                                       style: lastUpdateTextStyle(context),
+                                    )
+                                  : Text(
+                                      '-',
+                                      style: updateTextStyle(context),
                                     ),
-                                  ],
-                                )
-                              ],
-                            ),
+                              Text('  ')
+                            ],
                           ),
-                          Expanded(
-                            flex: 8,
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.end,
-                              children: [
-                                Text(
-                                  '최근 업데이트  ',
-                                  style: lastUpdateTextStyle(context),
-                                ),
-                                deviceList[index].lastUpdateTime != null
-                                    ? Text(
-                                        DateFormat('yyyy-MM-dd - HH:mm').format(
-                                            deviceList[index].lastUpdateTime),
-                                        style: updateTextStyle(context),
-                                      )
-                                    : Text(
-                                        '-',
-                                        style: updateTextStyle(context),
-                                      ),
-                                Text('  ')
-                              ],
-                            ),
-                          ),
-                        ],
-                      )
-                    ],
-                  )),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
             ),
+            Expanded(
+                flex: 2,
+                child: Container(
+                    // margin: EdgeInsets.only(top: 6),
+                    // padding: EdgeInsets.all(5),
+
+                    width: MediaQuery.of(context).size.width * 0.98,
+                    decoration: BoxDecoration(
+                        // boxShadow: [customeBoxShadow()],
+                        borderRadius: BorderRadius.all(Radius.circular(5))),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 1,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              InkWell(
+                                  onTap: () async {
+                                    duration = 30;
+                                    await connect(index, 0);
+                                  },
+                                  child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                          vertical: 7, horizontal: 8),
+                                      decoration: BoxDecoration(
+                                          color: Color.fromRGBO(2, 109, 194, 1),
+                                          border: Border.all(
+                                            width: 1,
+                                            color: Color.fromRGBO(
+                                                153, 153, 153, 1),
+                                          ),
+                                          borderRadius: BorderRadius.only(
+                                              topLeft: Radius.circular(5),
+                                              bottomLeft: Radius.circular(5))),
+                                      width: MediaQuery.of(context).size.width *
+                                          0.465,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          SizedBox(),
+                                          Text('한 달',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 17,
+                                                  color: Colors.white)),
+                                          Icon(
+                                            Icons.download_sharp,
+                                            color: Colors.white,
+                                          )
+                                        ],
+                                      ))),
+                            ],
+                          ),
+                        ),
+                        Expanded(
+                          flex: 1,
+                          child: Row(
+                            children: [
+                              InkWell(
+                                  onTap: () async {
+                                    duration = 1;
+                                    await connect(index, 0);
+                                  },
+                                  child: Container(
+                                      padding: EdgeInsets.symmetric(
+                                          vertical: 7, horizontal: 8),
+                                      decoration: BoxDecoration(
+                                          border: Border.all(
+                                            width: 1,
+                                            color: Color.fromRGBO(
+                                                153, 153, 153, 1),
+                                          ),
+                                          color:
+                                              Color.fromRGBO(255, 255, 255, 1),
+                                          borderRadius: BorderRadius.only(
+                                              topRight: Radius.circular(5),
+                                              bottomRight: Radius.circular(5))),
+                                      width: MediaQuery.of(context).size.width *
+                                          0.465,
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          SizedBox(),
+                                          Text('하 루',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                fontSize: 17,
+                                                color: Color.fromRGBO(
+                                                    2, 109, 194, 1),
+                                              )),
+                                          Icon(
+                                            Icons.download_sharp,
+                                            color:
+                                                Color.fromRGBO(2, 109, 194, 1),
+                                          )
+                                        ],
+                                      ))),
+                            ],
+                          ),
+                        )
+                      ],
+                    )))
           ]),
         );
       },
@@ -698,54 +849,56 @@ class ScanscreenState extends State<Scanscreen> {
               // print(name);
               // if (name.substring(0, 3) == 'IOT') {
               if (name != null) {
-                if (name.substring(0, 4) == 'T301' ||
-                    name.substring(0, 4) == 'T306') {
-                  BleDeviceItem currentItem = new BleDeviceItem(
-                      name,
-                      scanResult.rssi,
-                      scanResult.peripheral,
-                      scanResult.advertisementData,
-                      'scan');
-                  bool isExist = false;
+                if (name.length > 3) {
+                  if (name.substring(0, 4) == 'T301' ||
+                      name.substring(0, 4) == 'T306') {
+                    BleDeviceItem currentItem = new BleDeviceItem(
+                        name,
+                        scanResult.rssi,
+                        scanResult.peripheral,
+                        scanResult.advertisementData,
+                        'scan');
+                    bool isExist = false;
 
-                  for (int i = 0; i < savedList.length; i++) {
-                    // print(savedList[i] + ' ' + currentItem.getserialNumber());
-                    if (savedList[i] == currentItem.getserialNumber()) {
-                      isExist = true;
-                      break;
+                    for (int i = 0; i < savedList.length; i++) {
+                      // print(savedList[i] + ' ' + currentItem.getserialNumber());
+                      if (savedList[i] == currentItem.getserialNumber()) {
+                        isExist = true;
+                        break;
+                      }
                     }
+
+                    // print(currentItem.peripheral.identifier);
+                    // print(currentItem.getserialNumber().toString());
+                    // print(savedList.toString());
+
+                    if (isExist) {
+                      print('인 !');
+                      print(savedList);
+                      deviceList.add(currentItem);
+                      // var temp
+                      //     DBHelper().getDevice(scanResult.peripheral.identifier);
+
+                      // if (temp == Null) {
+                      //   print('Add ! -> ' + currentItem.getserialNumber());
+                      //   // DBHelper().createData(new DeviceInfo(
+                      //   //   deviceName: '',
+                      //   //   isDesiredConditionOn: 'false',
+                      //   //   macAddress: scanResult.peripheral.identifier,
+                      //   //   minTemper: 2,
+                      //   //   maxTemper: 8,
+                      //   //   minHumidity: 2,
+                      //   //   maxHumidity: 8,
+                      //   //   firstPath: '',
+                      //   //   secondPath: '',
+                      //   // ));
+                      // }
+                    }
+
+                    //print(scanResult.advertisementData.manufacturerData.toString());
+                    // print(scanResult.peripheral.name +
+                    //     "의 advertiseData  \n"
                   }
-
-                  print(currentItem.peripheral.identifier);
-                  print(currentItem.getserialNumber().toString());
-                  // print(savedList.toString());
-
-                  if (isExist) {
-                    print('인 !');
-                    print(savedList);
-                    deviceList.add(currentItem);
-                    // var temp
-                    //     DBHelper().getDevice(scanResult.peripheral.identifier);
-
-                    // if (temp == Null) {
-                    //   print('Add ! -> ' + currentItem.getserialNumber());
-                    //   // DBHelper().createData(new DeviceInfo(
-                    //   //   deviceName: '',
-                    //   //   isDesiredConditionOn: 'false',
-                    //   //   macAddress: scanResult.peripheral.identifier,
-                    //   //   minTemper: 2,
-                    //   //   maxTemper: 8,
-                    //   //   minHumidity: 2,
-                    //   //   maxHumidity: 8,
-                    //   //   firstPath: '',
-                    //   //   secondPath: '',
-                    //   // ));
-                    // }
-                  }
-
-                  //print(scanResult.advertisementData.manufacturerData.toString());
-                  // print(scanResult.peripheral.name +
-                  //     "의 advertiseData  \n"
                 }
               }
               // else if (scanResult.peripheral.identifier.substring(0, 8) ==
@@ -958,6 +1111,11 @@ class ScanscreenState extends State<Scanscreen> {
             // getCurrentLocation();
             //peripheral.
             deviceList[index].connectionState = 'connect';
+            scaffoldKey.currentState.showSnackBar(SnackBar(
+                content: Text(
+                    deviceList[index].getserialNumber() + ' 정보를 가져오는 중입니다.',
+                    style:
+                        TextStyle(fontSize: 16, fontWeight: FontWeight.bold))));
             setBLEState('연결 완료');
             setState(() {
               processState = 3;
@@ -988,9 +1146,15 @@ class ScanscreenState extends State<Scanscreen> {
           break;
         case PeripheralConnectionState.connecting:
           {
-            deviceList[index].connectionState = 'connecting';
-
-            showMyDialog_Connecting(context);
+            if (deviceList[index].connectionState != 'connecting') {
+              deviceList[index].connectionState = 'connecting';
+              scaffoldKey.currentState.showSnackBar(SnackBar(
+                  content: Text(
+                      deviceList[index].getserialNumber() + ' 연결중입니다.',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold))));
+            }
+            // showMyDialog_Connecting(context);
 
             print('연결중입니당!');
             currentState = 'connecting';
@@ -999,13 +1163,23 @@ class ScanscreenState extends State<Scanscreen> {
           break;
         case PeripheralConnectionState.disconnected:
           {
-            if (currentState == 'connecting') showMyDialog_Disconnect(context);
+            if (currentState == 'connecting' &&
+                deviceList[index].connectionState != 'scan') {
+              deviceList[index].connectionState = 'scan';
+              scaffoldKey.currentState.showSnackBar(SnackBar(
+                  content: Text(
+                      deviceList[index].getserialNumber() + ' 다시 시도해주세요.',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold))));
+            }
+            // showMyDialog_Disconnect(context);
+
             //해제됨
             _connected = false;
             print("${peripheral.name} has DISCONNECTED");
             //TODO: 일단 주석 !
             // _stopMonitoringTemperature();
-            deviceList[index].connectionState = 'scan';
+
             setBLEState('<연결 종료>');
             if (processState == 2) {
               setState(() {
@@ -1082,7 +1256,7 @@ class ScanscreenState extends State<Scanscreen> {
   TextStyle lastUpdateTextStyle(BuildContext context) {
     return TextStyle(
       fontSize: MediaQuery.of(context).size.width / 25,
-      color: Color.fromRGBO(255, 255, 255, 1),
+      color: Color.fromRGBO(235, 29, 37, 1),
       fontWeight: FontWeight.w700,
     );
   }
@@ -1090,8 +1264,8 @@ class ScanscreenState extends State<Scanscreen> {
   TextStyle updateTextStyle(BuildContext context) {
     return TextStyle(
       fontSize: MediaQuery.of(context).size.width / 24,
-      color: Color.fromRGBO(0xe8, 0x52, 0x55, 1),
-      fontWeight: FontWeight.w500,
+      color: Color.fromRGBO(0x50, 0x50, 0x50, 1),
+      fontWeight: FontWeight.w700,
     );
   }
 
@@ -1554,6 +1728,82 @@ class ScanscreenState extends State<Scanscreen> {
   //       });
   // }
 
+  Future<void> configurationTemperDialog(BuildContext context) async {
+    String valueText2 = '';
+    String valueText3 = '';
+    return showDialog(
+        barrierDismissible: false,
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text('그래프 온도 범위 설정'),
+            content: Container(
+              width: MediaQuery.of(context).size.width / 3,
+              height: MediaQuery.of(context).size.height / 5,
+              padding: EdgeInsets.all(10.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  TextField(
+                    onChanged: (value) {
+                      setState(() {
+                        valueText2 = value;
+                      });
+                    },
+                    controller: _textFieldController2,
+                    decoration: InputDecoration(hintText: '상한 온도       예시) 40'),
+                  ),
+                  TextField(
+                    onChanged: (value) {
+                      setState(() {
+                        valueText3 = value;
+                      });
+                    },
+                    controller: _textFieldController3,
+                    decoration:
+                        InputDecoration(hintText: '하한 온도       예시) -10'),
+                  ),
+                ],
+              ),
+            ),
+            actions: <Widget>[
+              TextButton(
+                child: Text('취소'),
+                onPressed: () {
+                  setState(() {
+                    Navigator.pop(context);
+                  });
+                },
+              ),
+              TextButton(
+                  child: Text('등록'),
+                  onPressed: () async {
+                    double minTemp = double.parse(valueText3);
+                    double maxTemp = double.parse(valueText2);
+                    if (minTemp == null || maxTemp == null) {
+                      showMyDialog_Error(context);
+                    } else {
+                      List<TempInfo> tempList = await DBHelper().getAllTemps();
+                      if (tempList.isEmpty) {
+                        // await DBHelper().initDB();
+                        await DBHelper().createSavedTemp(minTemp, maxTemp);
+                      } else {
+                        await DBHelper()
+                            .updateTemps(tempList[0].id, minTemp, maxTemp);
+                      }
+
+                      await showMyDialog_finishTemp(context);
+                    }
+
+                    Navigator.pop(context);
+
+                    // print(savedList);
+                  }),
+            ],
+          );
+        });
+  }
+
   Future<void> addDeviceDialog(BuildContext context) async {
     String valueText = '';
     return showDialog(
@@ -1667,42 +1917,56 @@ class ScanscreenState extends State<Scanscreen> {
         debugShowCheckedModeBanner: false,
         title: 'OPTILO',
         theme: ThemeData(
-          // primarySwatch: Colors.grey,
-          primaryColor: Color.fromRGBO(100, 137, 254, 1),
+          backgroundColor: Color.fromRGBO(0, 66, 166, 1),
           //canvasColor: Colors.transparent,
         ),
         home: Scaffold(
+          key: scaffoldKey,
           appBar: AppBar(
-              // backgroundColor: Color.fromARGB(22, 27, 32, 1),
+              backgroundColor: Color.fromRGBO(0, 66, 166, 1),
               title: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                flex: 7,
-                child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                  Text(
-                    'SensorOpt',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        fontSize: MediaQuery.of(context).size.width / 18,
-                        fontWeight: FontWeight.w600),
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                      flex: 2,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.start,
+                          children: [
+                            new IconButton(
+                              icon: new Icon(Icons.exposure, size: 25),
+                              onPressed: () {
+                                configurationTemperDialog(context);
+                              },
+                            )
+                          ])),
+                  Expanded(
+                    flex: 8,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Image(
+                            image: AssetImage('images/background.png'),
+                            fit: BoxFit.contain,
+                            width: MediaQuery.of(context).size.width * 0.4,
+                            // height: MediaQuery.of(context).size.width * 0.1,
+                          ),
+                        ]),
                   ),
-                ]),
-              ),
-              Expanded(
-                  flex: 4,
-                  child:
-                      Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                    new IconButton(
-                      icon: new Icon(Icons.add, size: 30),
-                      onPressed: () {
-                        addDeviceDialog(context);
-                      },
-                    )
-                  ])),
-            ],
-          )),
+                  Expanded(
+                      flex: 4,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            new IconButton(
+                              icon: new Icon(Icons.add, size: 30),
+                              onPressed: () {
+                                addDeviceDialog(context);
+                              },
+                            )
+                          ])),
+                ],
+              )),
           body: Container(
             padding:
                 EdgeInsets.only(top: MediaQuery.of(context).size.width * 0.015),
@@ -1745,29 +2009,29 @@ class ScanscreenState extends State<Scanscreen> {
       return Image(
         image: AssetImage('images/battery_100.png'),
         fit: BoxFit.contain,
-        width: MediaQuery.of(context).size.width * 0.1,
-        height: MediaQuery.of(context).size.width * 0.1,
+        width: MediaQuery.of(context).size.width * 0.08,
+        height: MediaQuery.of(context).size.width * 0.08,
       );
     } else if (battery >= 50) {
       return Image(
         image: AssetImage('images/battery_75.png'),
         fit: BoxFit.contain,
-        width: MediaQuery.of(context).size.width * 0.1,
-        height: MediaQuery.of(context).size.width * 0.1,
+        width: MediaQuery.of(context).size.width * 0.08,
+        height: MediaQuery.of(context).size.width * 0.08,
       );
     } else if (battery >= 35) {
       return Image(
         image: AssetImage('images/battery_50.png'),
         fit: BoxFit.contain,
-        width: MediaQuery.of(context).size.width * 0.05,
-        height: MediaQuery.of(context).size.width * 0.05,
+        width: MediaQuery.of(context).size.width * 0.08,
+        height: MediaQuery.of(context).size.width * 0.08,
       );
     } else {
       return Image(
         image: AssetImage('images/battery_25.png'),
         fit: BoxFit.contain,
-        width: MediaQuery.of(context).size.width * 0.1,
-        height: MediaQuery.of(context).size.width * 0.1,
+        width: MediaQuery.of(context).size.width * 0.08,
+        height: MediaQuery.of(context).size.width * 0.08,
       );
     }
   }
@@ -1775,7 +2039,7 @@ class ScanscreenState extends State<Scanscreen> {
   TextStyle whiteTextStyle(BuildContext context) {
     return TextStyle(
       fontSize: MediaQuery.of(context).size.width / 22,
-      color: Color.fromRGBO(255, 255, 255, 1),
+      color: Color.fromRGBO(58, 58, 58, 1),
       fontWeight: FontWeight.w600,
     );
   }
@@ -1783,8 +2047,8 @@ class ScanscreenState extends State<Scanscreen> {
   TextStyle btnTextStyle(BuildContext context) {
     return TextStyle(
       fontSize: MediaQuery.of(context).size.width / 12,
-      color: Color.fromRGBO(255, 255, 255, 1),
-      fontWeight: FontWeight.w700,
+      color: Color.fromRGBO(58, 58, 58, 1),
+      fontWeight: FontWeight.w800,
     );
   }
 
@@ -1957,6 +2221,55 @@ showMyDialog_Error(BuildContext context) {
                         size: MediaQuery.of(context).size.width / 5,
                       ),
                       Text("잘못 입력되었습니다. \n다시 입력해주세요.",
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 18),
+                          textAlign: TextAlign.center),
+                    ],
+                  ),
+                ),
+              ],
+            )),
+      );
+    },
+  );
+}
+
+showMyDialog_finishTemp(BuildContext context) {
+  bool manuallyClosed = false;
+  Future.delayed(Duration(seconds: 3)).then((_) {
+    if (!manuallyClosed) {
+      Navigator.of(context).pop();
+    }
+  });
+  return showDialog(
+    barrierDismissible: false,
+    context: context,
+    builder: (context) {
+      return Dialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(30.0)),
+        backgroundColor: Color.fromRGBO(0x61, 0xB2, 0xD0, 1),
+        // elevation: 16.0,
+        child: Container(
+            width: MediaQuery.of(context).size.width / 3,
+            height: MediaQuery.of(context).size.height / 4,
+            padding: EdgeInsets.all(10.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(
+                  flex: 4,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      Icon(
+                        Icons.check_box,
+                        color: Colors.white,
+                        size: MediaQuery.of(context).size.width / 5,
+                      ),
+                      Text("그래프 온도 설정이 완료되었습니다.",
                           style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w600,
@@ -2193,5 +2506,37 @@ showMyDialog_StartTransport(BuildContext context) {
             )),
       );
     },
+  );
+}
+
+threeBytesToint(Uint8List temp) {
+  int r = ((temp[0] & 0xF) << 16) | ((temp[1] & 0xFF) << 8) | (temp[2] & 0xFF);
+  return r;
+}
+
+Widget _getLoadingIndicator() {
+  return Padding(
+      child: Container(
+          child: CircularProgressIndicator(strokeWidth: 3),
+          width: 32,
+          height: 32),
+      padding: EdgeInsets.only(bottom: 16));
+}
+
+Widget _getHeading() {
+  return Padding(
+      child: Text(
+        'Please wait …',
+        style: TextStyle(color: Colors.white, fontSize: 16),
+        textAlign: TextAlign.center,
+      ),
+      padding: EdgeInsets.only(bottom: 4));
+}
+
+Widget _getText(String displayedText) {
+  return Text(
+    displayedText,
+    style: TextStyle(color: Colors.white, fontSize: 14),
+    textAlign: TextAlign.center,
   );
 }

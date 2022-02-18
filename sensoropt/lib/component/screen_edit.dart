@@ -41,10 +41,10 @@ class _EditScreenState extends State<EditScreen> {
   BleDeviceItem selectedDevice;
   TextEditingController _textFieldController;
 
-  int _minTemp = 4;
-  int _maxTemp = 28;
-  int _minHumi = 4;
-  int _maxHumi = 28;
+  int _minTemp = 2;
+  int _maxTemp = 8;
+  int _minHumi = 2;
+  int _maxHumi = 8;
   bool isSwitchedHumi = true;
   bool isSwitchedTemp = true;
   Future<DeviceInfo> _deviceData;
@@ -58,10 +58,10 @@ class _EditScreenState extends State<EditScreen> {
 
   @override
   void initState() {
-    _minTemp = 4;
-    _maxTemp = 28;
-    _minHumi = 4;
-    _maxHumi = 28;
+    _minTemp = 2;
+    _maxTemp = 8;
+    _minHumi = 2;
+    _maxHumi = 8;
     selectedDevice = widget.currentDevice;
     _deviceData = DBHelper().getDevice(widget.currentDevice.getserialNumber());
     _allDeviceTemp = DBHelper().getAllDevices();
@@ -115,23 +115,34 @@ class _EditScreenState extends State<EditScreen> {
         title: 'OPTILO',
         theme: ThemeData(
           // primarySwatch: Colors.grey,
-          primaryColor: Color.fromRGBO(100, 137, 254, 1),
+          backgroundColor: Color.fromRGBO(0, 66, 166, 1),
           //canvasColor: Colors.transparent,
         ),
         home: Scaffold(
             appBar: AppBar(
-              // backgroundColor: Color.fromARGB(22, 27, 32, 1),
+              backgroundColor: Color.fromRGBO(0, 66, 166, 1),
               title: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    Text(
-                      'SensorOpt',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          fontSize: MediaQuery.of(context).size.width / 18,
-                          fontWeight: FontWeight.w600),
+                    Expanded(flex: 3, child: SizedBox()),
+                    Expanded(
+                      flex: 7,
+                      child: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Image(
+                              image: AssetImage('images/background.png'),
+                              fit: BoxFit.contain,
+                              width: MediaQuery.of(context).size.width * 0.4,
+                              // height: MediaQuery.of(context).size.width * 0.1,
+                            ),
+                          ]),
                     ),
+                    Expanded(
+                      flex: 4,
+                      child: SizedBox(),
+                    )
                   ]),
             ),
             body: Center(
@@ -151,7 +162,7 @@ class _EditScreenState extends State<EditScreen> {
                               padding: EdgeInsets.only(top: 5, left: 12),
                               width: MediaQuery.of(context).size.width * 0.98,
                               decoration: BoxDecoration(
-                                  color: Color.fromRGBO(71, 71, 71, 1),
+                                  color: Color.fromRGBO(2, 109, 194, 1),
                                   //boxShadow: [customeBoxShadow()],
                                   borderRadius:
                                       BorderRadius.all(Radius.circular(5))),
@@ -183,7 +194,7 @@ class _EditScreenState extends State<EditScreen> {
                                 height: 50,
                                 width: MediaQuery.of(context).size.width * 1.0,
                                 decoration: BoxDecoration(
-                                    color: Color.fromRGBO(0xff, 0x2e, 0x16, 1),
+                                    color: Color.fromRGBO(235, 29, 37, 1),
                                     //boxShadow: [customeBoxShadow()],
                                     borderRadius:
                                         BorderRadius.all(Radius.circular(5))),
@@ -320,7 +331,7 @@ showUploadDialog(BuildContext context, int size) {
 
 TextStyle whiteBoldTextStyle = TextStyle(
   fontSize: 18,
-  color: Color.fromRGBO(255, 255, 255, 1),
+  color: Color.fromRGBO(239, 239, 239, 1),
   fontWeight: FontWeight.w700,
 );
 TextStyle whiteTextStyle = TextStyle(

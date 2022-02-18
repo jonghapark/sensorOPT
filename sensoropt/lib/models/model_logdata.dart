@@ -6,6 +6,13 @@ import 'package:path/path.dart';
 
 final String TableName = 'DeviceInfo';
 
+class TempInfo {
+  String id;
+  int minTemp;
+  int maxTemp;
+  TempInfo({this.id, this.maxTemp, this.minTemp});
+}
+
 class DeviceInfo {
   List<LogData> logDatas;
   String deviceName;
@@ -52,7 +59,7 @@ class DBHelper {
 
   initDB() async {
     Directory documentsDirectory = await getApplicationDocumentsDirectory();
-    String path = join(documentsDirectory.path, 'DeviceInfo3.db');
+    String path = join(documentsDirectory.path, 'DeviceInfo4.db');
     print('init');
 
     return await openDatabase(path, version: 1, onCreate: (db, version) async {
@@ -74,6 +81,13 @@ class DBHelper {
           CREATE TABLE savedList(
             id INTEGER PRIMARY KEY,
             mac TEXT
+          )
+        ''');
+      await db.execute('''
+          CREATE TABLE tempConfiguration(
+            id INTEGER PRIMARY KEY,
+            minTemp REAL,
+            maxTemp REAL
           )
         ''');
     }, onUpgrade: (db, oldVersion, newVersion) {});
@@ -108,6 +122,16 @@ class DBHelper {
     return res;
   }
 
+  //Create
+  createSavedTemp(double minTemp, double maxTemp) async {
+    // print(mac.toUpperCase());
+    final db = await database;
+    var res = await db.rawInsert(
+        'INSERT INTO tempConfiguration(minTemp,maxTemp) VALUES(?,?)',
+        [minTemp, maxTemp]);
+    return res;
+  }
+
   //Read
   Future<DeviceInfo> getDevice(String macAddress) async {
     final db = await database;
@@ -126,6 +150,14 @@ class DBHelper {
             firstPath: res.first['firstPath'],
             secondPath: res.first['secondPath'])
         : Null;
+  }
+
+  //Update-Temps
+  updateTemps(String id, double minTemp, double maxTemp) async {
+    final db = await database;
+    var res = await db.rawUpdate(
+        'UPDATE tempConfiguration SET minTemp = ?, maxTemp = ? WHERE id = ?',
+        [minTemp, maxTemp, id]);
   }
 
   //Update-name
@@ -199,6 +231,23 @@ class DBHelper {
     List<String> list =
         res.isNotEmpty ? res.map((c) => c['mac'].toString()).toList() : [];
     // print(list);
+    return list;
+  }
+
+  //Read All
+  Future<List<TempInfo>> getAllTemps() async {
+    final db = await database;
+    var res = await db.rawQuery('SELECT * FROM tempConfiguration');
+    print('저장 데이터 읽기 시작');
+    List<TempInfo> list = res.isNotEmpty
+        ? res
+            .map((c) => TempInfo(
+                  id: c['id'].toString(),
+                  minTemp: double.parse(c['minTemp'].toString()).round(),
+                  maxTemp: double.parse(c['maxTemp'].toString()).round(),
+                ))
+            .toList()
+        : [];
     return list;
   }
 
